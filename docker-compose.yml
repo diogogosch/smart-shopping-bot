@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: smart-shop-bot-db
+    environment:
+      POSTGRES_USER: shopbot
+      POSTGRES_PASSWORD: shopbot_dev_password
+      POSTGRES_DB: smart_shop_bot
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shopbot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - smart-shop-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: smart-shop-bot-cache
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - smart-shop-network
+
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: smart-shop-bot-app
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      DATABASE_URL: postgresql://shopbot:shopbot_dev_password@postgres:5432/smart_shop_bot
+      REDIS_URL: redis://redis:6379
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GOOGLE_VISION_API_KEY: ${GOOGLE_VISION_API_KEY}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - smart-shop-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  smart-shop-network:
+    driver: bridge
