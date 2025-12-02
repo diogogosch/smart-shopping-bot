@@ -1,0 +1,116 @@
+# SmartShopBot Portainer Stack Configuration
+# Deploy via Portainer: Home > Stacks > Add Stack > Web editor
+# Or use: docker stack deploy -c portainer-stack.yml smartshopbot
+
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: shopbot-db
+    environment:
+      POSTGRES_USER: ${DB_USER:-shopbot}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-shopbot_secure_pass}
+      POSTGRES_DB: ${DB_NAME:-smart_shop_bot}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-shopbot}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - shopbot-network
+    restart: unless-stopped
+    labels:
+      - "com.example.description=SmartShopBot PostgreSQL Database"
+
+  redis:
+    image: redis:7-alpine
+    container_name: shopbot-cache
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - shopbot-network
+    restart: unless-stopped
+    labels:
+      - "com.example.description=SmartShopBot Redis Cache"
+
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: smartshopbot:latest
+    container_name: shopbot-app
+    environment:
+      # Telegram
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      BOT_USERNAME: ${BOT_USERNAME:-SmartShopBot}
+      
+      # Database
+      DATABASE_URL: postgresql://${DB_USER:-shopbot}:${DB_PASSWORD:-shopbot_secure_pass}@postgres:5432/${DB_NAME:-smart_shop_bot}
+      
+      # Redis
+      REDIS_URL: redis://redis:6379
+      REDIS_TTL: 3600
+      
+      # AI Provider
+      AI_PROVIDER: ${AI_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-3.5-turbo}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
+      
+      # OCR
+      GOOGLE_VISION_API_KEY: ${GOOGLE_VISION_API_KEY}
+      
+      # Features
+      ENABLE_AI_SUGGESTIONS: ${ENABLE_AI_SUGGESTIONS:-true}
+      ENABLE_PRICE_TRACKING: ${ENABLE_PRICE_TRACKING:-true}
+      ENABLE_NOTIFICATIONS: ${ENABLE_NOTIFICATIONS:-true}
+      
+      # Internationalization
+      DEFAULT_LANGUAGE: ${DEFAULT_LANGUAGE:-en}
+      SUPPORTED_LANGUAGES: ${SUPPORTED_LANGUAGES:-en,pt_BR}
+      
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+    
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    
+    networks:
+      - shopbot-network
+    
+    restart: unless-stopped
+    
+    labels:
+      - "com.example.description=SmartShopBot Telegram Bot Application"
+      - "traefik.enable=false"
+    
+    # Uncomment for production with proper networking
+    # ports:
+    #   - "8000:8000"
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  shopbot-network:
+    driver: bridge
